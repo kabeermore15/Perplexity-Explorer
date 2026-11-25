@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="color-scheme" content="dark">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Perplexity Explorer</title>
+<style>
+  /* ---------- Basic page look ---------- */
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    /* Darker gradient: near-black fading into deep hunter green */
+    background: linear-gradient(160deg, #030504 0%, #07100a 50%, #0e1f13 100%);
+    background-attachment: fixed;
+    min-height: 100vh;
+    color: #e4e6f0;
+    line-height: 1.5;
+  }
+  header {
+    text-align: center;
+    padding: 32px 16px 8px;
+  }
+  header h1 {
+    margin: 0;
+    font-size: 2.2rem;
+    background: linear-gradient(90deg, #8fbf96, #4f8a5a);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  header p { color: #9a9fb8; margin: 6px 0 0; }
+  main { max-width: 900px; margin: 0 auto; padding: 16px; }
+
+  /* ---------- White cards ---------- */
+  .card {
+    background: rgba(10, 17, 12, 0.88);
+    border: 1px solid #1c3121;
+    border-radius: 16px;
+    padding: 24px;
+    margin-bottom: 20px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  }
+  .card h2 { margin-top: 0; font-size: 1.3rem; }
+  .badge {
+    display: inline-block;
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 3px 10px;
+    border-radius: 999px;
+    background: #3d3410;
+    color: #ffd43b;
+    vertical-align: middle;
+    margin-left: 8px;
+  }
+
+  /* ---------- Inputs and buttons ---------- */
+  input[type="text"], input[type="number"] {
+    font-size: 1rem;
+    padding: 10px 12px;
+    border: 1px solid #2a4430;
+    border-radius: 10px;
+    outline: none;
+    background: #0a120c;
+    color: #e4e6f0;
+  }
+  input:focus { border-color: #4a7d52; box-shadow: 0 0 0 3px rgba(53,94,59,0.45); }
+  #sentence { width: 100%; font-size: 1.1rem; }
+
+  button {
+    font-size: 0.95rem;
+    padding: 9px 16px;
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    font-weight: 600;
+  }
+  .btn-main {
+    background: linear-gradient(90deg, #22402a, #355e3b);
+    color: #fff;
+  }
+  .btn-main:disabled { opacity: 0.6; cursor: wait; }
+  .btn-light { background: #1a2b1e; color: #9cc7a3; }
+  .btn-light:hover { background: #253d2a; }
+  .btn-remove { background: #3a1d22; color: #ff8787; padding: 6px 12px; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; align-items: center; }
+
+  .status { color: #9a9fb8; font-style: italic; }
+  .error {
+    background: #2c1519;
+    border: 1px solid #c92a2a;
+    color: #ff8787;
+    padding: 12px 14px;
+    border-radius: 10px;
+    margin-top: 12px;
+    font-weight: 600;
+  }
+  .hidden { display: none; }
+  .muted { color: #7d8299; }
+
+  /* ---------- Tables ---------- */
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; }
+  th, td { padding: 8px 10px; text-align: left; border-bottom: 1px solid #1c2e1f; }
+  th { background: #132116; font-size: 0.85rem; color: #9a9fb8; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .token { font-family: ui-monospace, Menlo, Consolas, monospace; background: #1a2b1e; color: #bfdcc4; padding: 2px 6px; border-radius: 6px; }
+
+  /* ---------- Steps ---------- */
+  .step {
+    background: #121f16;
+    border-left: 4px solid #4a7d52;
+    border-radius: 10px;
+    padding: 12px 14px;
+    margin: 10px 0;
+    overflow-wrap: anywhere;
+  }
+  .step b { color: #7fb088; }
+  .big {
+    font-size: 2.6rem;
+    font-weight: 800;
+    color: #7fb088;
+    margin-top: 4px;
+  }
+
+  /* ---------- Next-token bars ---------- */
+  .bar-row { display: flex; align-items: center; gap: 10px; margin: 6px 0; }
+  .bar-label { width: 110px; text-align: right; flex-shrink: 0; }
+  .bar-track { flex: 1; background: #16241a; border-radius: 8px; height: 26px; overflow: hidden; }
+  .bar-fill { height: 100%; background: #355e3b; border-radius: 8px; }
+  .bar-row.top .bar-fill { background: linear-gradient(90deg, #22402a, #355e3b); }
+  .bar-row.top .bar-label { font-weight: 700; }
+  .bar-pct { width: 64px; font-variant-numeric: tabular-nums; }
+
+  /* ---------- Hand-made token rows ---------- */
+  .sim-row { display: flex; gap: 8px; margin: 6px 0; align-items: center; }
+  .sim-row input[type="text"] { flex: 1; }
+  .sim-row input[type="number"] { width: 130px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Perplexity Explorer</h1>
+  <p>See how a real language model (DistilGPT-2) scores a sentence, token by token.</p>
+</header>
+
+<main>
+
+  <!-- ===== Section 1: type a sentence ===== -->
+  <section class="card">
+    <h2>1. Type a sentence</h2>
+    <input type="text" id="sentence" value="I love Python">
+    <div class="row">
+      <span class="muted">Samples:</span>
+      <button class="btn-light sample">I love Python</button>
+      <button class="btn-light sample">Python love I</button>
+      <button class="btn-light sample">The capital of France is Paris</button>
+    </div>
+    <div class="row">
+      <button class="btn-main" id="calcBtn">Calculate perplexity</button>
+      <span class="status" id="status">The model downloads the first time you click (about 100 MB).</span>
+    </div>
+    <div class="error hidden" id="error"></div>
+  </section>
+
+  <!-- ===== Section 2: model probabilities → perplexity ===== -->
+  <section class="card">
+    <h2>2. Probability of each token → perplexity</h2>
+    <div id="modelResult"><p class="muted">Click “Calculate perplexity” to see the model's real probabilities.</p></div>
+  </section>
+
+  <!-- ===== Section 3: next-token prediction ===== -->
+  <section class="card">
+    <h2>3. What does the model predict next?</h2>
+    <div id="nextTokens"><p class="muted">The model's top 8 guesses for the next token will appear here.</p></div>
+  </section>
+
+  <!-- ===== Section 4: try it by hand ===== -->
+  <section class="card">
+    <h2>4. Try it by hand <span class="badge">Simulated, not from the model</span></h2>
+    <p class="muted">Type your own tokens and probabilities. Nothing here comes from the language model.</p>
+    <div class="row">
+      <span class="muted">Presets:</span>
+      <button class="btn-light" id="presetLove">I love Python</button>
+      <button class="btn-light" id="presetEighth">All 1/8</button>
+      <button class="btn-light" id="presetSurprise">One surprising word</button>
+    </div>
+    <div id="simRows"></div>
+    <div class="row"><button class="btn-light" id="addRow">+ Add token</button></div>
+    <div id="simResult"></div>
+  </section>
+
+</main>
+
+<script type="module">
+  import { AutoTokenizer, AutoModelForCausalLM, Tensor } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3";
+
+  // ---------- Small helpers ----------
+
+  // Make text safe to put inside HTML
+  function escapeHtml(text) {
+    return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+
+  // Show spaces as ␣ so you can see them in tokens
+  function showToken(text) {
+    return '<span class="token">' + escapeHtml(text.replace(/ /g, "␣")) + "</span>";
+  }
+
+  // Format a number nicely: normal for medium values, scientific for tiny/huge ones
+  function fmt(x, digits = 4) {
+    if (!isFinite(x)) return "∞";
+    if (x !== 0 && (Math.abs(x) >= 1e6 || Math.abs(x) < 1e-4)) return x.toExponential(2);
+    return Number(x.toFixed(digits)).toString();
+  }
+
+  // Stable softmax probability of one id, reading logits[start .. start+size)
+  // We subtract the biggest logit first so Math.exp never overflows.
+  function softmaxProb(logits, start, size, id) {
+    let max = -Infinity;
+    for (let i = 0; i < size; i++) max = Math.max(max, logits[start + i]);
+    let sum = 0;
+    for (let i = 0; i < size; i++) sum += Math.exp(logits[start + i] - max);
+    return Math.exp(logits[start + id] - max) / sum;
+  }
+
+  // ---------- Shared: table + three steps ----------
+  // rows = [{ label: "html for the token", p: 0.5 }, ...]
+  function renderPerplexity(rows) {
+    // Table of tokens
+    let html = '<table><tr><th>#</th><th>Token</th><th class="num">Probability P</th><th class="num">1/P</th></tr>';
+    rows.forEach((r, i) => {
+      html += `<tr><td>${i + 1}</td><td>${r.label}</td><td class="num">${fmt(r.p)}</td><td class="num">${fmt(1 / r.p)}</td></tr>`;
+    });
+    html += "</table>";
+
+    const N = rows.length;
+
+    // Use logs so long sentences don't overflow:
+    // ln(product of 1/P) = sum of −ln P
+    let sumNegLog = 0;
+    for (const r of rows) sumNegLog += -Math.log(r.p);
+    const product = Math.exp(sumNegLog);          // may be ∞ for very long sentences (display only)
+    const perplexity = Math.exp(sumNegLog / N);   // exp(average of −ln P)
+
+    const multiplication = rows.map(r => fmt(1 / r.p)).join(" × ");
+
+    html += `<div class="step"><b>Step 1:</b> multiply all the 1/P values<br>${multiplication} = <b>${fmt(product)}</b></div>`;
+    html += `<div class="step"><b>Step 2:</b> N = number of tokens = <b>${N}</b></div>`;
+    html += `<div class="step"><b>Step 3:</b> Perplexity = (${fmt(product)})<sup>1/${N}</sup>
+             <div class="big">${fmt(perplexity, 2)}</div>
+             <span class="muted">Computed as exp(average of −ln P) so big products never overflow.</span></div>`;
+    return html;
+  }
+
+  // =====================================================
+  //  Sections 1–3: the real model
+  // =====================================================
+
+  const MODEL_ID = "Xenova/distilgpt2";
+  let tokenizer = null;
+  let model = null;
+
+  const sentenceBox = document.getElementById("sentence");
+  const calcBtn = document.getElementById("calcBtn");
+  const statusEl = document.getElementById("status");
+  const errorEl = document.getElementById("error");
+
+  function showError(message) {
+    errorEl.textContent = message;
+    errorEl.classList.remove("hidden");
+  }
+
+  // Load the tokenizer and model only once (the first time it's needed)
+  async function loadModel() {
+    if (model) return;
+    statusEl.textContent = "Downloading the model…";
+    tokenizer = await AutoTokenizer.from_pretrained(MODEL_ID);
+    model = await AutoModelForCausalLM.from_pretrained(MODEL_ID, { dtype: "q8" });
+    statusEl.textContent = "Model ready";
+  }
+
+  async function calculate() {
+    errorEl.classList.add("hidden");
+    const sentence = sentenceBox.value.trim();
+    if (!sentence) { showError("Please type a sentence first."); return; }
+
+    calcBtn.disabled = true;
+    try {
+      await loadModel();
+      statusEl.textContent = "Calculating…";
+
+      // Token ids: 50256 (start marker) + the sentence's tokens
+      const sentenceIds = tokenizer.encode(sentence);
+      const ids = [50256, ...sentenceIds];
+      const n = ids.length;
+
+      // Build input tensors (the model wants 64-bit integers)
+      const inputIds = new Tensor("int64", BigInt64Array.from(ids.map(BigInt)), [1, n]);
+      const attentionMask = new Tensor("int64", new BigInt64Array(n).fill(1n), [1, n]);
+
+      // Run the model once on all the ids
+      const output = await model({ input_ids: inputIds, attention_mask: attentionMask });
+      const logits = output.logits.data;      // flat array
+      const vocab = output.logits.dims[2];    // shape is [1, n, vocab]
+
+      // Probability of each real token = softmax at the position just before it
+      const rows = [];
+      for (let t = 1; t < n; t++) {
+        const p = softmaxProb(logits, (t - 1) * vocab, vocab, ids[t]);
+        rows.push({ label: showToken(tokenizer.decode([ids[t]])), p });
+      }
+      document.getElementById("modelResult").innerHTML = renderPerplexity(rows);
+
+      // Section 3: top 8 next tokens from the last position
+      showNextTokens(logits, (n - 1) * vocab, vocab);
+
+      statusEl.textContent = "Model ready";
+    } catch (err) {
+      console.error(err);
+      statusEl.textContent = "";
+      showError("Could not load or run the model: " + (err.message || err) +
+                ". Check your internet connection and try again. No results are shown because they would not be real.");
+      document.getElementById("modelResult").innerHTML = '<p class="muted">No model output.</p>';
+      document.getElementById("nextTokens").innerHTML = '<p class="muted">No model output.</p>';
+    } finally {
+      calcBtn.disabled = false;
+    }
+  }
+
+  function showNextTokens(logits, start, size) {
+    // Stable softmax over the whole vocabulary
+    let max = -Infinity;
+    for (let i = 0; i < size; i++) max = Math.max(max, logits[start + i]);
+    const probs = new Float64Array(size);
+    let sum = 0;
+    for (let i = 0; i < size; i++) { probs[i] = Math.exp(logits[start + i] - max); sum += probs[i]; }
+
+    // Pick the 8 biggest (simple: sort the ids by probability)
+    const ids = Array.from({ length: size }, (_, i) => i);
+    ids.sort((a, b) => probs[b] - probs[a]);
+    const top = ids.slice(0, 8);
+
+    const best = probs[top[0]] / sum;
+    let html = "";
+    top.forEach((id, i) => {
+      const p = probs[id] / sum;
+      const width = (p / best) * 100;   // the top bar fills the track
+      html += `<div class="bar-row ${i === 0 ? "top" : ""}">
+                 <div class="bar-label">${showToken(tokenizer.decode([id]))}</div>
+                 <div class="bar-track"><div class="bar-fill" style="width:${width}%"></div></div>
+                 <div class="bar-pct">${(p * 100).toFixed(1)}%</div>
+               </div>`;
+    });
+    document.getElementById("nextTokens").innerHTML = html;
+  }
+
+  // Buttons for Section 1
+  calcBtn.addEventListener("click", calculate);
+  document.querySelectorAll(".sample").forEach(btn => {
+    btn.addEventListener("click", () => {
+      sentenceBox.value = btn.textContent;
+      calculate();
+    });
+  });
+
+  // =====================================================
+  //  Section 4: try it by hand (simulated)
+  // =====================================================
+
+  const simRowsEl = document.getElementById("simRows");
+
+  // Add one editable row
+  function addRow(name = "", prob = "") {
+    const row = document.createElement("div");
+    row.className = "sim-row";
+    row.innerHTML = `
+      <input type="text" placeholder="token" value="${escapeHtml(String(name))}">
+      <input type="number" placeholder="probability" min="0" max="1" step="0.01" value="${prob}">
+      <button class="btn-remove">Remove</button>`;
+    row.querySelector(".btn-remove").addEventListener("click", () => { row.remove(); updateSim(); });
+    row.querySelectorAll("input").forEach(inp => inp.addEventListener("input", updateSim));
+    simRowsEl.appendChild(row);
+  }
+
+  // Replace all rows with a preset
+  function loadPreset(list) {
+    simRowsEl.innerHTML = "";
+    list.forEach(([name, p]) => addRow(name, p));
+    updateSim();
+  }
+
+  // Recalculate whenever something changes
+  function updateSim() {
+    const out = document.getElementById("simResult");
+    const rows = [];
+    let problem = "";
+    simRowsEl.querySelectorAll(".sim-row").forEach((row, i) => {
+      const [nameInput, probInput] = row.querySelectorAll("input");
+      const p = parseFloat(probInput.value);
+      if (!(p > 0 && p <= 1)) problem = `Row ${i + 1}: probability must be more than 0 and at most 1.`;
+      rows.push({ label: showToken(nameInput.value || "?"), p });
+    });
+    if (rows.length === 0) { out.innerHTML = '<p class="muted">Add at least one token.</p>'; return; }
+    if (problem) { out.innerHTML = `<div class="error">${problem}</div>`; return; }
+    out.innerHTML = renderPerplexity(rows);
+  }
+
+  document.getElementById("addRow").addEventListener("click", () => { addRow("", 0.5); updateSim(); });
+  document.getElementById("presetLove").addEventListener("click", () =>
+    loadPreset([["I", 0.5], [" love", 0.8], [" Python", 0.2]]));
+  document.getElementById("presetEighth").addEventListener("click", () =>
+    loadPreset(Array.from({ length: 8 }, (_, i) => ["token " + (i + 1), 0.125])));
+  document.getElementById("presetSurprise").addEventListener("click", () =>
+    loadPreset([["The", 0.9], [" cat", 0.9], [" sat", 0.9], [" banana", 0.01]]));
+
+  // Start Section 4 with the first preset
+  loadPreset([["I", 0.5], [" love", 0.8], [" Python", 0.2]]);
+</script>
+</body>
+</html>
